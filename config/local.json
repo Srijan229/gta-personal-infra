@@ -6,5 +6,11 @@
   "gatewayPort": 8088,
   "bindAddress": "127.0.0.1",
   "nodeMajor": 20,
-  "postgresMajor": 18
+  "postgresMajor": 18,
+  "sourceArchive": {
+    "repository": "Srijan229/gta-personal-infra",
+    "releaseTag": "app-source-7f869e7",
+    "asset": "app-source-7f869e7.tar",
+    "sha256": "edf801b72bcbe804cb466ca028d592244c7ac13ecdc1d634f03eccac7a31a304"
+  }
 }

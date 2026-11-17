@@ -34,6 +34,8 @@ jobs:
           terraform -chdir=infra/eks init -backend=false -input=false
           terraform -chdir=infra/eks validate
       - name: Build pinned application and controller images
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/build-images.mjs
       - name: Install Kubernetes tools and create disposable cluster
         run: |

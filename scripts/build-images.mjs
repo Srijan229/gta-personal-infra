@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { root, local, source, config } from "./core.mjs";
 function run(file, args, cwd = root) {
@@ -8,24 +9,49 @@ function run(file, args, cwd = root) {
 }
 const build = path.join(local, "build");
 fs.mkdirSync(build, { recursive: true });
-if (!fs.existsSync(source)) {
+if (!config.sourceArchive && !fs.existsSync(source)) {
   run("git", ["init", source]);
   run("git", ["remote", "add", "origin", config.sourceRepository], source);
   run("git", ["fetch", "--depth=1", "origin", config.sourceRevision], source);
   run("git", ["checkout", "--detach", "FETCH_HEAD"], source);
 }
-const actual = spawnSync("git", ["rev-parse", "HEAD"], {
-  cwd: source,
-  encoding: "utf8",
-});
-if (actual.stdout.trim() !== config.sourceRevision)
-  throw Error("Source pin mismatch");
 const archive = path.join(build, "source.tar");
-run(
-  "git",
-  ["archive", "--format=tar", "--output=" + archive, config.sourceRevision],
-  source,
-);
+if (config.sourceArchive) {
+  const input = config.sourceArchive;
+  run("gh", [
+    "release",
+    "download",
+    input.releaseTag,
+    "--repo",
+    input.repository,
+    "--pattern",
+    input.asset,
+    "--dir",
+    build,
+    "--clobber",
+  ]);
+  const downloaded = path.join(build, input.asset);
+  if (
+    crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(downloaded))
+      .digest("hex") !== input.sha256
+  )
+    throw Error("Source archive checksum mismatch");
+  fs.copyFileSync(downloaded, archive);
+} else {
+  const actual = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: source,
+    encoding: "utf8",
+  });
+  if (actual.stdout.trim() !== config.sourceRevision)
+    throw Error("Source pin mismatch");
+  run(
+    "git",
+    ["archive", "--format=tar", "--output=" + archive, config.sourceRevision],
+    source,
+  );
+}
 const stage = path.join(build, "source");
 fs.mkdirSync(stage, { recursive: true });
 run("tar", ["-xf", archive, "-C", stage]);
