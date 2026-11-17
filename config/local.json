@@ -1,0 +1,10 @@
+{
+  "sourceRepository": "https://github.com/retherrien/gtaApplication.git",
+  "sourceRevision": "7f869e75ecbefb8f981ec4461f92293369cb373e",
+  "databaseName": "gta_personal",
+  "backendPort": 3101,
+  "gatewayPort": 8088,
+  "bindAddress": "127.0.0.1",
+  "nodeMajor": 20,
+  "postgresMajor": 18
+}
