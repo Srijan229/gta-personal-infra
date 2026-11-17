@@ -6,7 +6,6 @@ AuthorizedKeysFile /run/keys/authorized_keys
 AllowUsers demo
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-UsePAM no
 PermitRootLogin no
 AllowTcpForwarding remote
 GatewayPorts clientspecified
@@ -15,4 +14,4 @@ MaxSessions 0
 PermitTTY no
 AllowAgentForwarding no
 X11Forwarding no
-LogLevel ERROR
+LogLevel VERBOSE
