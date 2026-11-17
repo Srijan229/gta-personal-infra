@@ -7,6 +7,8 @@ export function guardContext() {
   if (result.status || !context)
     throw Error("Set the isolated rehearsal kubeconfig first.");
   if (context === "kind-gta-rehearsal") return context;
+  if (context === "minikube" && process.env.GTA_LOCAL_MINIKUBE === "true")
+    return context;
   if (
     process.env.GTA_CLOUD_APPROVED === "true" &&
     /^arn:aws:eks:us-east-1:\d{12}:cluster\/gta-portfolio-demo$/.test(context)

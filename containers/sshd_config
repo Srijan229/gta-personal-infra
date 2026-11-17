@@ -2,7 +2,7 @@ Port 2222
 ListenAddress 0.0.0.0
 HostKey /run/keys/host_key
 PidFile /run/sshd.pid
-AuthorizedKeysFile /run/keys/authorized_keys
+AuthorizedKeysFile /run/sshd/authorized_keys
 AllowUsers demo
 PasswordAuthentication no
 KbdInteractiveAuthentication no

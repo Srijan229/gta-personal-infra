@@ -126,7 +126,7 @@ try {
         context:
           process.env.GTA_CLOUD_APPROVED === "true"
             ? "eks-demo"
-            : "kind-rehearsal",
+            : process.env.GTA_LOCAL_MINIKUBE === "true" ? "minikube" : "kind-rehearsal",
         startedAt: new Date(started).toISOString(),
         samples,
       },

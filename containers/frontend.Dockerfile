@@ -8,6 +8,7 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY portfolio-gateway.mjs ./
+COPY telemetry.cjs ./
 USER node
 EXPOSE 8080
 CMD ["node", "portfolio-gateway.mjs"]

@@ -8,6 +8,6 @@
   },
   "scripts": {
     "infra": "node --env-file=.env scripts/infra.mjs",
-    "test": "node --test test/infra.test.mjs test/policy.test.mjs test/render.test.mjs"
+    "test": "node --test test/infra.test.mjs test/policy.test.mjs test/render.test.mjs test/telemetry.test.mjs"
   }
 }

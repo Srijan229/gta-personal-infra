@@ -55,7 +55,7 @@ if (config.sourceArchive) {
 const stage = path.join(build, "source");
 fs.mkdirSync(stage, { recursive: true });
 run("tar", ["-xf", archive, "-C", stage]);
-for (const file of ["backend-bootstrap.cjs", "scenario.cjs", "expire.cjs"])
+for (const file of ["backend-bootstrap.cjs", "scenario.cjs", "expire.cjs", "telemetry.cjs"])
   fs.copyFileSync(
     path.join(root, "containers", file),
     path.join(stage, "backend", file),
@@ -64,6 +64,7 @@ fs.copyFileSync(
   path.join(root, "containers", "portfolio-gateway.mjs"),
   path.join(stage, "frontend", "portfolio-gateway.mjs"),
 );
+fs.copyFileSync(path.join(root, 'containers', 'telemetry.cjs'), path.join(stage, 'frontend', 'telemetry.cjs'));
 for (const component of ["backend", "frontend", "controller", "relay"]) {
   const context = ["backend", "frontend"].includes(component)
     ? path.join(stage, component)

@@ -5,7 +5,7 @@ COPY package.json package-lock.json ./
 COPY prisma ./prisma
 RUN npm ci --include=dev --no-audit --no-fund
 COPY src ./src
-COPY backend-bootstrap.cjs scenario.cjs expire.cjs ./
+COPY backend-bootstrap.cjs scenario.cjs expire.cjs telemetry.cjs ./
 ENV NODE_ENV=production PORT=3001
 USER node
 EXPOSE 3001 3002

@@ -1,6 +1,19 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import telemetry from './telemetry.cjs';
+const originalEmit = http.Server.prototype.emit;
+http.Server.prototype.emit = function(event, ...args) {
+  if (event === 'request' && this.address()?.port === 8080)
+    return telemetry.track(args[0], args[1], 'frontend', () => originalEmit.call(this, event, ...args));
+  return originalEmit.call(this, event, ...args);
+};
+http.createServer((req, res) => {
+  if (req.url !== '/telemetry') {res.writeHead(404);res.end();return;}
+  res.setHeader('Content-Type','application/json');
+  res.setHeader('Cache-Control','no-store');
+  res.end(JSON.stringify(telemetry.snapshot()));
+}).listen(8082, '0.0.0.0');
 const dist = "/app/dist";
 const mime = {
   ".html": "text/html",
@@ -27,7 +40,7 @@ http
           port: 3001,
           path: req.url,
           method: req.method,
-          headers: { ...req.headers, host: "backend:3001" },
+          headers: { ...req.headers, host: "backend:3001", ...(telemetry.context.getStore() ? {'x-gta-trace':telemetry.context.getStore().traceId, 'x-gta-parent':telemetry.context.getStore().spanId} : {}) },
         },
         (reply) => {
           res.writeHead(reply.statusCode, reply.headers);

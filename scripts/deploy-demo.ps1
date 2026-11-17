@@ -1,9 +1,9 @@
-param([switch]$CloudApproved,[switch]$Stop,[string]$NodePath='node')
+param([switch]$CloudApproved,[switch]$LocalMinikube,[switch]$Stop,[string]$NodePath='node')
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 $work=Join-Path $projectRoot '.local/k8s'
 $processFile=Join-Path $work 'tunnel-processes.json'
-$env:KUBECONFIG=Join-Path $work 'eks-kubeconfig'
+$env:KUBECONFIG=Join-Path $work $(if ($LocalMinikube) { 'minikube-kubeconfig' } else { 'eks-kubeconfig' })
 $kubectl=(Get-Command kubectl).Source
 function Invoke-Checked($Program,$Arguments) {
   & $Program @Arguments
@@ -18,15 +18,22 @@ function Stop-OwnedTunnels {
   Remove-Item -LiteralPath $processFile
 }
 if ($Stop) { Stop-OwnedTunnels; Write-Host 'Owned local tunnel processes stopped.'; return }
-if (!$CloudApproved) { throw 'Deployment requires the user cloud go-ahead and -CloudApproved.' }
-if (!$env:GTA_IMAGE_PREFIX -or !$env:GTA_IMAGE_TAG) { throw 'Set the image prefix and tag from the approved image publisher first.' }
+if (!$CloudApproved -and !$LocalMinikube) { throw 'Choose -LocalMinikube or an explicitly approved cloud deployment.' }
+if (!$LocalMinikube -and (!$env:GTA_IMAGE_PREFIX -or !$env:GTA_IMAGE_TAG)) { throw 'Set the image prefix and tag from the approved image publisher first.' }
 if (!(Test-Path (Join-Path $work 'laptop.env'))) { throw 'Prepare the dedicated local demo database first.' }
 if (Test-Path $processFile) { throw 'Stop the previous owned tunnels before starting another deployment.' }
-$env:GTA_CLOUD_APPROVED='true'
+if ($LocalMinikube) {
+  $env:GTA_LOCAL_MINIKUBE='true'
+  Remove-Item Env:GTA_CLOUD_APPROVED -ErrorAction SilentlyContinue
+  Remove-Item Env:GTA_IMAGE_PREFIX -ErrorAction SilentlyContinue
+  Remove-Item Env:GTA_IMAGE_TAG -ErrorAction SilentlyContinue
+} else { $env:GTA_CLOUD_APPROVED='true' }
 Set-Location $projectRoot
 # guardContext is also enforced by k8s-secrets and k8s-demo. Check here before apply.
 $context=& $kubectl config current-context
-if ($context -notmatch '^arn:aws:eks:us-east-1:\d{12}:cluster/gta-portfolio-demo$') { throw 'Unexpected Kubernetes context.' }
+if ($LocalMinikube) {
+  if ($context -ne 'minikube') { throw 'Expected isolated minikube context.' }
+} elseif ($context -notmatch '^arn:aws:eks:us-east-1:\d{12}:cluster/gta-portfolio-demo$') { throw 'Unexpected Kubernetes context.' }
 Invoke-Checked $NodePath @('scripts/render-k8s.mjs')
 Invoke-Checked $kubectl @('apply','-f','kubernetes/crd.json')
 Invoke-Checked $kubectl @('wait','--for=condition=Established','crd/applicationscalingpolicies.portfolio.gta.dev','--timeout=30s')
@@ -58,7 +65,10 @@ try {
   Start-Tunnel $ssh @('-N','-p','2222','-i',"`"$key`"",'-o',"UserKnownHostsFile=`"$known`"",'-o','StrictHostKeyChecking=yes','-o','ExitOnForwardFailure=yes','-o','ServerAliveInterval=10','-o','ServerAliveCountMax=3','-R','0.0.0.0:5432:127.0.0.1:5432','demo@127.0.0.1') 'database-ssh' $key
   $relayReady=$false
   for ($attempt=0;$attempt -lt 20;$attempt++) {
-    & $kubectl -n gta-demo exec deployment/db-relay -- nc -z 127.0.0.1 5432 2>$null
+    $previousErrorPreference=$ErrorActionPreference
+    $ErrorActionPreference='Continue'
+    & $kubectl -n gta-demo exec deployment/db-relay -- nc -z 127.0.0.1 5432 2>&1 | Out-Null
+    $ErrorActionPreference=$previousErrorPreference
     if ($LASTEXITCODE -eq 0) { $relayReady=$true; break }
     Start-Sleep -Seconds 1
   }
@@ -67,7 +77,11 @@ try {
   Invoke-Checked $kubectl @('apply','-f',(Join-Path $work 'migration.json'))
   Invoke-Checked $kubectl @('-n','gta-demo','wait','--for=condition=complete','job/migrate','--timeout=180s')
   Invoke-Checked $kubectl @('apply','-f',(Join-Path $work 'app.json'))
-  Invoke-Checked $kubectl @('apply','-f','https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.1/components.yaml')
+  if ($LocalMinikube) {
+    Invoke-Checked 'minikube' @('-p','minikube','addons','enable','metrics-server')
+  } else {
+    Invoke-Checked $kubectl @('apply','-f','https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.1/components.yaml')
+  }
   foreach ($component in @('backend','frontend','controller')) { Invoke-Checked $kubectl @('-n','gta-demo','rollout','status',"deployment/$component",'--timeout=180s') }
   Invoke-Checked $kubectl @('-n','kube-system','rollout','status','deployment/metrics-server','--timeout=120s')
   Start-Tunnel $kubectl @("--kubeconfig=`"$env:KUBECONFIG`"",'-n','gta-demo','port-forward','service/frontend','18088:8080','--address=127.0.0.1') 'web-forward' $env:KUBECONFIG
