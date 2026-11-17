@@ -1,0 +1,61 @@
+name: Publish tested images (approved AWS session only)
+on:
+  workflow_dispatch:
+    inputs:
+      approval:
+        description: "Type CLOUD_APPROVED only after approving the cloud session"
+        required: true
+      rehearsal_run_id:
+        description: "Successful Kubernetes rehearsal run containing tested-images artifact"
+        required: true
+      role_arn:
+        description: "Terraform image_publisher_role_arn output"
+        required: true
+      image_prefix:
+        description: "Terraform image_prefix output"
+        required: true
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+jobs:
+  publish:
+    if: inputs.approval == 'CLOUD_APPROVED'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate destination and successful rehearsal
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.rehearsal_run_id }}
+          ROLE: ${{ inputs.role_arn }}
+          PREFIX: ${{ inputs.image_prefix }}
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$ROLE" =~ ^arn:aws:iam::[0-9]{12}:role/gta-portfolio-demo-image-publisher$ ]]
+          [[ "$PREFIX" =~ ^[0-9]{12}\.dkr\.ecr\.us-east-1\.amazonaws\.com/gta-portfolio-demo-$ ]]
+          [[ "$(gh run view "$RUN_ID" --json conclusion --jq .conclusion)" == success ]]
+          [[ "$(gh run view "$RUN_ID" --json workflowName --jq .workflowName)" == 'Kubernetes rehearsal (no AWS)' ]]
+          gh run download "$RUN_ID" --name tested-images --dir .local/tested-images
+          docker load -i .local/tested-images/tested-images.tar.gz
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.role_arn }}
+          aws-region: us-east-1
+          role-duration-seconds: 900
+      - name: Publish the rehearsed images to the temporary repositories
+        env:
+          PREFIX: ${{ inputs.image_prefix }}
+          RUN_ID: ${{ inputs.rehearsal_run_id }}
+        run: |
+          REGISTRY="${PREFIX%%/*}"
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "$REGISTRY"
+          for component in backend frontend controller relay; do
+            destination="${PREFIX}${component}:rehearsal-${RUN_ID}"
+            docker tag "gta-${component}:demo" "$destination"
+            docker push "$destination"
+          done
+          echo "GTA_IMAGE_PREFIX=$PREFIX" >> "$GITHUB_STEP_SUMMARY"
+          echo "GTA_IMAGE_TAG=rehearsal-$RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Image publishing complete. No Kubernetes deployment was performed by this workflow.' >> "$GITHUB_STEP_SUMMARY"

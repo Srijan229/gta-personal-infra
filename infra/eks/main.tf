@@ -30,7 +30,7 @@ resource "aws_route_table_association" "public" {
 resource "aws_iam_role" "cluster" {
   name = "${var.name}-cluster"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow",
-    Principal = { Service = "eks.amazonaws.com" }, Action = "sts:AssumeRole" }] })
+  Principal = { Service = "eks.amazonaws.com" }, Action = "sts:AssumeRole" }] })
 }
 resource "aws_iam_role_policy_attachment" "cluster" {
   role       = aws_iam_role.cluster.name
@@ -49,17 +49,17 @@ resource "aws_eks_cluster" "demo" {
     subnet_ids              = aws_subnet.public[*].id
     endpoint_private_access = true
     endpoint_public_access  = true
-    public_access_cidrs      = [var.operator_cidr]
+    public_access_cidrs     = [var.operator_cidr]
   }
   depends_on = [aws_iam_role_policy_attachment.cluster, aws_route_table_association.public]
 }
 resource "aws_iam_role" "node" {
   name = "${var.name}-node"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow",
-    Principal = { Service = "ec2.amazonaws.com" }, Action = "sts:AssumeRole" }] })
+  Principal = { Service = "ec2.amazonaws.com" }, Action = "sts:AssumeRole" }] })
 }
 resource "aws_iam_role_policy_attachment" "node" {
-  for_each = toset(["AmazonEKSWorkerNodePolicy", "AmazonEC2ContainerRegistryReadOnly", "AmazonEKS_CNI_Policy"])
+  for_each   = toset(["AmazonEKSWorkerNodePolicy", "AmazonEC2ContainerRegistryReadOnly", "AmazonEKS_CNI_Policy"])
   role       = aws_iam_role.node.name
   policy_arn = "arn:aws:iam::aws:policy/${each.key}"
 }
@@ -67,11 +67,11 @@ resource "aws_eks_node_group" "demo" {
   cluster_name    = aws_eks_cluster.demo.name
   node_group_name = "demo"
   node_role_arn   = aws_iam_role.node.arn
-  subnet_ids     = aws_subnet.public[*].id
-  instance_types = ["t3.medium"]
-  ami_type       = "AL2023_x86_64_STANDARD"
-  capacity_type  = "ON_DEMAND"
-  disk_size      = 20
+  subnet_ids      = aws_subnet.public[*].id
+  instance_types  = ["t3.medium"]
+  ami_type        = "AL2023_x86_64_STANDARD"
+  capacity_type   = "ON_DEMAND"
+  disk_size       = 20
   scaling_config {
     desired_size = 1
     min_size     = 1
@@ -101,13 +101,13 @@ resource "aws_iam_role" "image_publisher" {
     Condition = { StringEquals = {
       "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com",
       "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:ref:refs/heads/${var.github_branch}"
-    } } }] })
+  } } }] })
 }
 resource "aws_iam_role_policy" "image_publisher" {
   role = aws_iam_role.image_publisher.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
     { Effect = "Allow", Action = ["ecr:GetAuthorizationToken"], Resource = "*" },
     { Effect = "Allow", Action = ["ecr:BatchCheckLayerAvailability", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchGetImage"],
-      Resource = [for repo in aws_ecr_repository.images : repo.arn] }
+    Resource = [for repo in aws_ecr_repository.images : repo.arn] }
   ] })
 }

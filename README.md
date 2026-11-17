@@ -95,3 +95,17 @@ was closed without merging and is not included in this pinned revision.
 Windows checks cover the native local profile. Linux process management, container
 builds, TLS, firewall rules and real SSO need validation when hosting is chosen.
 No cloud resources are provisioned by this first version.
+
+## Kubernetes and short EKS portfolio demo
+
+The `eks-demo-prep` work adds an `ApplicationScalingPolicy` CRD/controller,
+container packaging, private Kubernetes services, CPU HPA, a reverse PostgreSQL
+tunnel, Terraform for an ephemeral EKS cluster, and a Linux Kubernetes rehearsal.
+The controller uses active application phases and available course sections to
+raise the minimum replica count, and retains capacity if that signal fails.
+
+See [architecture](docs/eks/architecture.md) and the
+[one-hour cloud runbook](docs/eks/one-hour-runbook.md). Cloud creation requires the
+user's separate go-ahead. The automatic rehearsal runs only in GitHub's Linux
+runner and creates no AWS resources. The AWS image publisher is manual and uses
+short-lived OIDC credentials; deployment and cleanup remain explicit steps.

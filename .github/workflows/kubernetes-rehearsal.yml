@@ -72,6 +72,11 @@ jobs:
           for i in $(seq 1 20); do nc -z 127.0.0.1 2222 && break || sleep 1; done
           ssh -N -p 2222 -i .local/k8s/client_key -o UserKnownHostsFile=.local/k8s/known_hosts -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -R 0.0.0.0:5432:127.0.0.1:15432 demo@127.0.0.1 > .local/k8s/ssh.log 2>&1 &
           for i in $(seq 1 20); do kubectl -n gta-demo exec deployment/db-relay -- nc -z 127.0.0.1 5432 && break || sleep 1; done
+          if ! kubectl -n gta-demo exec deployment/db-relay -- nc -z 127.0.0.1 5432; then
+            cat .local/k8s/ssh.log
+            kubectl -n gta-demo logs deployment/db-relay --tail=30
+            exit 1
+          fi
           kubectl apply -f .local/k8s/migration.json
           kubectl -n gta-demo wait --for=condition=complete job/migrate --timeout=180s
           kubectl apply -f .local/k8s/app.json
@@ -106,5 +111,8 @@ jobs:
         run: |
           kubectl -n gta-demo get pods,hpa,asp || true
           kubectl -n gta-demo get events --sort-by=.lastTimestamp | tail -25 || true
+          tail -30 .local/k8s/ssh.log 2>/dev/null || true
+          kubectl -n gta-demo logs deployment/db-relay --tail=30 || true
+          kubectl -n gta-demo logs job/migrate --tail=30 || true
           kind delete cluster --name gta-rehearsal || true
           docker rm -f gta-postgres || true
