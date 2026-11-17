@@ -1,0 +1,12 @@
+{
+  "namespace": "gta-demo",
+  "kubernetesVersion": "1.36",
+  "kindVersion": "v0.33.0",
+  "kindNodeImage": "kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed",
+  "metricsServerVersion": "v0.9.1",
+  "terraformVersion": "1.17.2",
+  "databaseName": "gta_personal_k8s",
+  "maxBackendReplicas": 5,
+  "cloudSessionMinutes": 60,
+  "cleanupStartMinute": 40
+}

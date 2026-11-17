@@ -1,0 +1,108 @@
+name: Kubernetes rehearsal (no AWS)
+on:
+  workflow_dispatch:
+  push:
+    branches: [eks-demo-prep]
+    paths:
+      [
+        "controller/**",
+        "containers/**",
+        "kubernetes/**",
+        "infra/eks/**",
+        "scripts/*k8s*",
+        "scripts/build-images.mjs",
+        "config/kubernetes.json",
+        ".github/workflows/kubernetes-rehearsal.yml",
+      ]
+permissions:
+  contents: read
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.2
+      - name: Tests and Terraform validation (no AWS credentials)
+        run: |
+          npm test
+          terraform -chdir=infra/eks init -backend=false -input=false
+          terraform -chdir=infra/eks validate
+      - name: Build pinned application and controller images
+        run: node scripts/build-images.mjs
+      - name: Install Kubernetes tools and create disposable cluster
+        run: |
+          curl -fsSLo /tmp/kind https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          curl -fsSLo /tmp/kind.sha256 https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64.sha256sum
+          echo "$(cut -d' ' -f1 /tmp/kind.sha256)  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+          curl -fsSLo /tmp/kubectl https://dl.k8s.io/release/v1.36.4/bin/linux/amd64/kubectl
+          curl -fsSLo /tmp/kubectl.sha256 https://dl.k8s.io/release/v1.36.4/bin/linux/amd64/kubectl.sha256
+          echo "$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum -c -
+          sudo install /tmp/kubectl /usr/local/bin/kubectl
+          mkdir -p .local/k8s
+          export KUBECONFIG="$PWD/.local/k8s/kubeconfig"
+          echo "KUBECONFIG=$KUBECONFIG" >> "$GITHUB_ENV"
+          kind create cluster --name gta-rehearsal --image "$(node -p "JSON.parse(require('fs').readFileSync('config/kubernetes.json')).kindNodeImage")" --wait 120s
+          kind load docker-image gta-backend:demo gta-frontend:demo gta-controller:demo gta-relay:demo --name gta-rehearsal
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.1/components.yaml
+          kubectl -n kube-system patch deployment metrics-server --type=json -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+          kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s
+      - name: Rehearse laptop-style database tunnel, migrations and application
+        run: |
+          export POSTGRES_PASSWORD=$(openssl rand -hex 24)
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          docker run -d --name gta-postgres -p 127.0.0.1:15432:5432 -e POSTGRES_PASSWORD -e POSTGRES_USER=portfolio -e POSTGRES_DB=gta_rehearsal postgres:18
+          for i in $(seq 1 30); do docker exec gta-postgres pg_isready -U portfolio && break || sleep 2; done
+          node scripts/render-k8s.mjs
+          kubectl apply -f kubernetes/crd.json
+          kubectl wait --for=condition=Established crd/applicationscalingpolicies.portfolio.gta.dev --timeout=30s
+          kubectl apply -f .local/k8s/bootstrap.json
+          export GTA_DATABASE_URL="postgresql://portfolio:$POSTGRES_PASSWORD@db-relay:5432/gta_rehearsal?connection_limit=3"
+          node scripts/k8s-secrets.mjs
+          kubectl -n gta-demo rollout status deployment/db-relay --timeout=120s
+          kubectl -n gta-demo port-forward service/db-relay 2222:2222 > .local/k8s/forward.log 2>&1 &
+          for i in $(seq 1 20); do nc -z 127.0.0.1 2222 && break || sleep 1; done
+          ssh -N -p 2222 -i .local/k8s/client_key -o UserKnownHostsFile=.local/k8s/known_hosts -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -R 0.0.0.0:5432:127.0.0.1:15432 demo@127.0.0.1 > .local/k8s/ssh.log 2>&1 &
+          for i in $(seq 1 20); do kubectl -n gta-demo exec deployment/db-relay -- nc -z 127.0.0.1 5432 && break || sleep 1; done
+          kubectl apply -f .local/k8s/migration.json
+          kubectl -n gta-demo wait --for=condition=complete job/migrate --timeout=180s
+          kubectl apply -f .local/k8s/app.json
+          kubectl -n gta-demo rollout status deployment/backend --timeout=180s
+          kubectl -n gta-demo rollout status deployment/frontend --timeout=120s
+          kubectl -n gta-demo rollout status deployment/controller --timeout=120s
+          kubectl -n gta-demo port-forward service/frontend 18088:8080 > .local/k8s/web-forward.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:18088/healthz && break || sleep 1; done
+          curl -fsS http://127.0.0.1:18088/profile > /dev/null
+          curl -fsS http://127.0.0.1:18088/api/applications
+          node scripts/k8s-demo.mjs
+      - name: Save tested images for the later approved cloud session
+        run: |
+          mkdir -p .local/images
+          docker save gta-backend:demo gta-frontend:demo gta-controller:demo gta-relay:demo | gzip > .local/images/tested-images.tar.gz
+          cp .local/build/provenance.json .local/images/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tested-images
+          path: .local/images/
+          retention-days: 1
+          include-hidden-files: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scaling-evidence
+          path: .local/evidence/
+          retention-days: 7
+          include-hidden-files: true
+      - name: Diagnostics and cleanup
+        if: always()
+        run: |
+          kubectl -n gta-demo get pods,hpa,asp || true
+          kubectl -n gta-demo get events --sort-by=.lastTimestamp | tail -25 || true
+          kind delete cluster --name gta-rehearsal || true
+          docker rm -f gta-postgres || true

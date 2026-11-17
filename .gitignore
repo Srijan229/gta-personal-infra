@@ -6,3 +6,12 @@ node_modules/
 *.dump
 *.sql
 *.log
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+kubeconfig*
+*.pem
+*.key
